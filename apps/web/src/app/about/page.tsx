@@ -16,7 +16,7 @@ export default function About() {
             ABOUT
           </h1>
           <p className="text-white text-xs leading-relaxed mb-6 font-pixel text-left leading-6">
-            SPACE DEFENDERS É UM JOGO MULTIPLAYER RETRÔ ONDE VOCÊ E UM PARCEIRO DEVEM PROTEGER A GALÁXIA CONTRA AMEAÇAS ALIENÍGENAS EM TEMPO REAL.
+            SPACE DEFENDERS É UM JOGO RETRÔ ONDE VOCÊ E UM PARCEIRO DEVEM PROTEGER A GALÁXIA CONTRA AMEAÇAS ALIENÍGENAS EM TEMPO REAL.
           </p>
           <div className="text-left text-[10px] text-zinc-400 font-pixel space-y-2">
             <p>CONTROLES:</p>

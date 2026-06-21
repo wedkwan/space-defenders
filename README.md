@@ -104,6 +104,10 @@ git clone https://github.com/seu-usuario/space-defender.git
 cd space-defender
 ```
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 88bd81d (feat: logica pro modo solo)
 ### 2. Rodar o Frontend (Desenvolvimento)
 Para testar apenas as telas iniciais do frontend:
 ```bash
@@ -118,3 +122,7 @@ Assim que os demais serviços backend forem implementados, você poderá subir t
 ```bash
 docker compose up --build
 ```
+<<<<<<< HEAD
+=======
+### npx next dev -H 0.0.0.0 -p 3000 
+>>>>>>> 88bd81d (feat: logica pro modo solo)

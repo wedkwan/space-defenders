@@ -13,13 +13,15 @@ export default function Home() {
       {/* Main Content Area */}
       <main className="relative z-10 flex flex-col items-center justify-center px-4 max-w-2xl w-full text-center">
         {/* Game Logo */}
-        <div className="mb-12 select-none hover:scale-105 transition-transform duration-300">
+        <div className="mb-12 select-none hover:scale-105 transition-transform duration-300 w-full max-w-[640px]">
           <Image
-            src="/logo.png"
+            src="/logo.webp"
             alt="Space Defenders Logo"
             width={640}
             height={320}
             priority
+            sizes="(max-width: 640px) 100vw, 640px"
+            style={{ width: "100%", height: "auto" }}
             className="drop-shadow-[0_0_25px_rgba(101,197,222,0.6)]"
           />
         </div>
