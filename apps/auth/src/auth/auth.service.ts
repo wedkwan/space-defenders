@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { Role } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
@@ -23,11 +24,17 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    return user;
+    const { password: _password, ...safeUser } = user;
+    return safeUser;
   }
 
-  async login(user: { id: string; email: string; name: string }) {
-    const payload = { sub: user.id, email: user.email, name: user.name };
+  async login(user: { id: string; email: string; name: string; role: Role }) {
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
 
     return {
       access_token: this.jwtService.sign(payload),
@@ -35,6 +42,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
+        role: user.role,
       },
     };
   }
@@ -44,16 +52,17 @@ export class AuthService {
     name: string;
     provider: string;
   }) {
-    let user = await this.usersService.findByEmail(profile.email);
+    const existingUser = await this.usersService.findByEmail(profile.email);
 
-    if (!user) {
-      user = await this.usersService.create({
-        name: profile.name,
-        email: profile.email,
-        provider: profile.provider,
-      });
+    if (existingUser) {
+      const { password: _password, ...safeUser } = existingUser;
+      return safeUser;
     }
 
-    return user;
+    return this.usersService.create({
+      name: profile.name,
+      email: profile.email,
+      provider: profile.provider,
+    });
   }
 }
