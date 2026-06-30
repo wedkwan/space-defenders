@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
 import { UsersService } from '../users/users.service';
+import { GoogleUserDto } from '../users/dto/google-user.dto';
 
 @Injectable()
 export class AuthService {
@@ -47,22 +48,20 @@ export class AuthService {
     };
   }
 
-  async validateOAuthUser(profile: {
-    email: string;
-    name: string;
-    provider: string;
-  }) {
+  async validateOAuthUser(profile: GoogleUserDto) {
     const existingUser = await this.usersService.findByEmail(profile.email);
 
     if (existingUser) {
       const { password: _password, ...safeUser } = existingUser;
-      return safeUser;
+      return this.login(safeUser);
     }
 
-    return this.usersService.create({
+    const newUser = await this.usersService.create({
       name: profile.name,
       email: profile.email,
       provider: profile.provider,
     });
+
+    return this.login(newUser);
   }
 }

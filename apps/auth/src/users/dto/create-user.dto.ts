@@ -14,7 +14,7 @@ export class CreateUserDto {
   @IsString()
   password?: string;
 
+  @IsOptional()
   @IsString({ message: 'O provider deve ser um texto.' })
-  @IsNotEmpty({ message: 'O provider é obrigatório.' })
-  provider!: string; // <-- Mudamos de '?' para '!' e adicionamos o @IsNotEmpty
+  provider?: string;
 }

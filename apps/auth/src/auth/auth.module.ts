@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
+import { GoogleStrategy } from './google-oauth.strategy';
 import { UsersModule } from '../users/users.module';
 
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '1d';
@@ -18,7 +19,7 @@ const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '1d';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, GoogleStrategy],
   exports: [AuthService],
 })
 export class AuthModule {}

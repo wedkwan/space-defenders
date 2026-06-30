@@ -18,7 +18,9 @@ export class UsersService {
   constructor(private prisma: PrismaService) {}
 
   async create(data: CreateUserDto) {
-    if (data.provider === 'local' && !data.password) {
+    const provider = data.provider ?? 'local';
+
+    if (provider === 'local' && !data.password) {
       throw new BadRequestException('Senha é obrigatória para cadastro local');
     }
 
@@ -31,7 +33,7 @@ export class UsersService {
         name: data.name,
         email: data.email,
         password: hashedPassword,
-        provider: data.provider,
+        provider,
       },
       select: SAFE_USER_SELECT,
     });
@@ -51,8 +53,6 @@ export class UsersService {
   }
 
   async findByEmail(email: string) {
-    // Mantém o retorno completo, incluindo password —
-    // necessário para o AuthService comparar o hash no login.
     return this.prisma.user.findUnique({
       where: { email },
     });

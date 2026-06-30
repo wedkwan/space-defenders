@@ -1,7 +1,7 @@
-
 import { Body, Controller, Post, Get, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { GoogleOauthGuard } from './guards/google-oauth.guard';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './decorators/public.decorator';
 
@@ -17,6 +17,21 @@ export class AuthController {
       loginDto.password,
     );
     return this.authService.login(user);
+  }
+
+  @Public()
+  @UseGuards(GoogleOauthGuard)
+  @Get('google')
+  googleAuth() {
+    // o Guard intercepta a requisição e redireciona pro Google
+    // esse corpo nunca chega a executar
+  }
+
+  @Public()
+  @UseGuards(GoogleOauthGuard)
+  @Get('google/callback')
+  async googleAuthRedirect(@Req() req: { user: any }) {
+    return this.authService.validateOAuthUser(req.user);
   }
 
   @UseGuards(JwtAuthGuard)
