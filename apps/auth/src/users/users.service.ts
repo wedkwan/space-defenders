@@ -3,6 +3,8 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { MailService } from '../mail/mail.service';
+import { VerificationTokenService } from '../auth/verification-token.service';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -10,12 +12,17 @@ const SAFE_USER_SELECT = {
   email: true,
   provider: true,
   role: true,
+  emailVerified: true,
   createdAt: true,
 };
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+    private readonly verificationTokenService: VerificationTokenService,
+  ) {}
 
   async create(data: CreateUserDto) {
     const provider = data.provider ?? 'local';
@@ -28,7 +35,7 @@ export class UsersService {
       ? await bcrypt.hash(data.password, 10)
       : null;
 
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         name: data.name,
         email: data.email,
@@ -37,6 +44,13 @@ export class UsersService {
       },
       select: SAFE_USER_SELECT,
     });
+
+    if (provider === 'local') {
+      const token = await this.verificationTokenService.createToken(user.id);
+      await this.mailService.sendVerificationEmail(user.email, token);
+    }
+
+    return user;
   }
 
   async findAll() {
@@ -44,6 +58,8 @@ export class UsersService {
       select: SAFE_USER_SELECT,
     });
   }
+
+  
 
   async findOne(id: string) {
     return this.prisma.user.findUnique({
@@ -69,6 +85,14 @@ export class UsersService {
   async remove(id: string) {
     return this.prisma.user.delete({
       where: { id },
+      select: SAFE_USER_SELECT,
+    });
+  }
+
+  async markEmailAsVerified(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { emailVerified: true },
       select: SAFE_USER_SELECT,
     });
   }
