@@ -7,6 +7,7 @@ import {
   UseGuards,
   Req,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -44,8 +45,10 @@ export class AuthController {
   @UseGuards(GoogleOauthGuard)
   @Get('google/callback')
   @ApiOperation({ summary: 'Callback do Google OAuth' })
-  async googleAuthRedirect(@Req() req: { user: any }) {
-    return this.authService.validateOAuthUser(req.user);
+  async googleAuthRedirect(@Req() req: { user: any }, @Res() res: any) {
+    const result = await this.authService.validateOAuthUser(req.user);
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/auth/callback?token=${result.access_token}`);
   }
 
   @Public()

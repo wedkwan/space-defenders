@@ -260,8 +260,8 @@ export class GameRoom {
   }
 
   start() {
-    // 30 ticks por segundo = ~33ms por tick
-    this.tickInterval = setInterval(() => this.tick(), 1000 / 30);
+    // 60 ticks por segundo = ~16.6ms por tick (config.ts: TICK_RATE = 60)
+    this.tickInterval = setInterval(() => this.tick(), 1000 / 60);
   }
 
   receiveInput(playerId: string, input: PlayerInput) {

@@ -1,63 +1,19 @@
 import { GAME_CONFIG } from './config';
+import { PlayerState, Bullet, Enemy, GameSnapshot } from './types';
+import { encodeSnapshot } from './binary-protocol';
 
-// ── Tipos ──
-
-export interface PlayerState {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  lives: number;
-  score: number;
-  shootCooldown: number;
-  invincible: number; // ticks restantes de invencibilidade
-  frame: number;
-  animCounter: number;
-}
-
-export interface Bullet {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  vx: number;
-  vy: number;
-  isPlayerBullet: boolean;
-  ownerId: string; // 'enemy' para tiros inimigos
-}
-
-export interface Enemy {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  frame: number;
-  group: 'left' | 'right';
-}
-
-export interface GameSnapshot {
-  players: PlayerState[];
-  enemies: Enemy[];
-  bullets: Bullet[];
-  wave: number;
-  status: 'waiting' | 'playing' | 'gameover';
-  message?: string;
-}
-
-// ── Classe da Sala de Jogo ──
+export type { PlayerState, Bullet, Enemy, GameSnapshot };
 
 export class GameRoom {
   private players: Map<string, PlayerState> = new Map();
+  private playerOrder: string[] = [];
   private enemies: Enemy[] = [];
   private bullets: Bullet[] = [];
   private wave = 1;
   private status: 'waiting' | 'playing' | 'gameover' = 'waiting';
   private tickInterval: NodeJS.Timeout | null = null;
+  private minPlayers = 2;
 
-  // Movimentação de inimigos
   private enemyMoveTimer = 0;
   private leftGroupDirection = 1;
   private rightGroupDirection = -1;
@@ -94,9 +50,10 @@ export class GameRoom {
       frame: 0,
       animCounter: 0,
     });
+    this.playerOrder.push(id);
 
-    // Iniciar o jogo quando houver pelo menos 1 jogador
-    if (this.players.size >= 1 && this.status === 'waiting') {
+    // Iniciar o jogo quando houver jogadores suficientes
+    if (this.players.size >= this.minPlayers && this.status === 'waiting') {
       this.start();
     }
 
@@ -105,6 +62,7 @@ export class GameRoom {
 
   removePlayer(id: string) {
     this.players.delete(id);
+    this.playerOrder = this.playerOrder.filter(pid => pid !== id);
     if (this.players.size === 0) {
       this.stop();
     }
@@ -118,29 +76,20 @@ export class GameRoom {
     return this.players.size;
   }
 
-  private findNearestEnemy(playerX: number, playerY: number, playerWidth: number, playerHeight: number): { x: number; y: number } | null {
-    if (this.enemies.length === 0) return null;
+  getPlayerIndex(playerId: string): number {
+    return this.playerOrder.indexOf(playerId);
+  }
 
-    const playerCenterX = playerX + playerWidth / 2;
-    const playerCenterY = playerY + playerHeight / 2;
+  getPlayerName(playerId: string): string | undefined {
+    return this.players.get(playerId)?.name;
+  }
 
-    let nearestDist = Infinity;
-    let nearestPos = { x: 0, y: 0 };
+  getPlayerIdByIndex(index: number): string | undefined {
+    return this.playerOrder[index];
+  }
 
-    for (const enemy of this.enemies) {
-      const enemyCenterX = enemy.x + enemy.width / 2;
-      const enemyCenterY = enemy.y + enemy.height / 2;
-      const dx = enemyCenterX - playerCenterX;
-      const dy = enemyCenterY - playerCenterY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearestPos = { x: enemyCenterX, y: enemyCenterY };
-      }
-    }
-
-    return nearestPos;
+  setMinPlayers(min: number) {
+    this.minPlayers = min;
   }
 
   handleInput(playerId: string, input: { type: string; direction?: number }) {
@@ -159,32 +108,13 @@ export class GameRoom {
 
     if (input.type === 'shoot') {
       if (player.shootCooldown <= 0) {
-        const bulletOriginX = player.x + player.width / 2 - 2;
-        const bulletOriginY = player.y - 12;
-        const bulletSpeed = Math.abs(GAME_CONFIG.PLAYER_BULLET_SPEED);
-
-        let vx = 0;
-        let vy = -bulletSpeed;
-
-        const target = this.findNearestEnemy(player.x, player.y, player.width, player.height);
-        if (target) {
-          const dx = target.x - bulletOriginX;
-          const dy = target.y - bulletOriginY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-
-          if (dist > 0) {
-            vx = (dx / dist) * bulletSpeed;
-            vy = (dy / dist) * bulletSpeed;
-          }
-        }
-
         this.bullets.push({
-          x: bulletOriginX,
-          y: bulletOriginY,
+          x: player.x + player.width / 2 - 2,
+          y: player.y - 12,
           width: 4,
           height: 16,
-          vx,
-          vy,
+          vx: 0,
+          vy: -GAME_CONFIG.PLAYER_BULLET_SPEED,
           isPlayerBullet: true,
           ownerId: playerId,
         });
@@ -271,13 +201,13 @@ export class GameRoom {
     const allDead = Array.from(this.players.values()).every((p) => p.lives <= 0);
     if (allDead && this.players.size > 0) {
       this.status = 'gameover';
-      this.emitToRoom('game:snapshot', this.getSnapshot());
+      this.broadcastSnapshot();
       this.stop();
       return;
     }
 
     // 8. Enviar snapshot para todos
-    this.emitToRoom('game:snapshot', this.getSnapshot());
+    this.broadcastSnapshot();
   }
 
   // ── Spawner ──
@@ -570,5 +500,12 @@ export class GameRoom {
       }
       return true;
     });
+  }
+
+  // ── Broadcast via Socket.io ──
+
+  private broadcastSnapshot() {
+    const snapshot = this.getSnapshot();
+    this.emitToRoom('game:snapshot', encodeSnapshot(snapshot));
   }
 }

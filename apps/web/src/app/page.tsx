@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import SpaceBackground from "@/components/SpaceBackground";
@@ -8,11 +8,33 @@ import { authService, User } from "@/utils/authService";
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const originalName = useRef("");
 
   useEffect(() => {
-    // Carrega o usuário atual se logado
     setUser(authService.getCurrentUser());
+    const saved = authService.getDisplayName();
+    if (saved) setDisplayName(saved);
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      originalName.current = user.name;
+      if (!displayName) setDisplayName(user.name);
+    }
+  }, [user]);
+
+  const handleSaveName = () => {
+    const trimmed = displayName.trim();
+    if (trimmed.length > 0 && trimmed.length <= 16) {
+      authService.setDisplayName(trimmed);
+    } else {
+      setDisplayName(originalName.current);
+      authService.setDisplayName(originalName.current);
+    }
+    setIsEditing(false);
+  };
 
   const handleLogout = () => {
     authService.logout();
@@ -26,9 +48,39 @@ export default function Home() {
 
       {/* Pilot Status HUD */}
       {user && (
-        <div className="absolute top-4 right-4 z-20 flex items-center gap-4 bg-black/85 border-2 border-[#2d8fb4] p-3 font-pixel text-[8px] sm:text-[10px] rounded-sm select-none">
-          <div>
-            PILOTO: <span className="text-[#65c5de]">{user.name.toUpperCase()}</span>
+        <div className="absolute top-4 right-4 z-20 flex items-center gap-3 bg-black/85 border-2 border-[#2d8fb4] p-3 font-pixel text-[8px] sm:text-[10px] rounded-sm select-none">
+          <div className="flex items-center gap-2">
+            <span>PILOTO:</span>
+            {isEditing ? (
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveName();
+                  if (e.key === "Escape") {
+                    setDisplayName(originalName.current);
+                    setIsEditing(false);
+                  }
+                }}
+                onBlur={handleSaveName}
+                maxLength={16}
+                autoFocus
+                className="bg-black/80 border border-[#65c5de] text-[#65c5de] px-2 py-1 font-pixel text-[10px] w-28 outline-none rounded-sm"
+              />
+            ) : (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="text-[#65c5de] hover:text-white cursor-pointer focus:outline-none uppercase flex items-center gap-1.5 transition-colors"
+                title="Clique para editar"
+              >
+                {displayName.toUpperCase()}
+                <svg className="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                  <path d="m15 5 4 4"/>
+                </svg>
+              </button>
+            )}
           </div>
           <button
             onClick={handleLogout}

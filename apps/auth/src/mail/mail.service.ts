@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ResendService } from 'nestjs-resend';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Resend } from 'resend';
 
 @Injectable()
 export class MailService {
@@ -7,16 +7,21 @@ export class MailService {
   private readonly from: string;
   private readonly frontendUrl: string;
 
-  constructor(private readonly resendService: ResendService) {
+  constructor(@Optional() @Inject(Resend) private readonly resend: Resend | null) {
     this.from = process.env.MAIL_FROM ?? 'onboarding@resend.dev';
     this.frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
   }
 
   async sendVerificationEmail(email: string, token: string): Promise<void> {
+    if (!this.resend) {
+      this.logger.warn('RESEND_API_KEY não configurado. E-mail de verificação não enviado.');
+      return;
+    }
+
     const verificationUrl = `${this.frontendUrl}/verify-email?token=${token}`;
 
     try {
-      await this.resendService.send({
+      await this.resend.emails.send({
         from: this.from,
         to: email,
         subject: 'Confirme seu e-mail - Space Defenders',

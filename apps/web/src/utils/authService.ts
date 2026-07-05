@@ -61,6 +61,19 @@ export const authService = {
     return this.decodeToken(token);
   },
 
+  getDisplayName(): string {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("space_defenders_display_name") || "";
+    }
+    return "";
+  },
+
+  setDisplayName(name: string): void {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("space_defenders_display_name", name);
+    }
+  },
+
   async register(name: string, email: string, password?: string): Promise<{ user: User; access_token: string }> {
     const response = await fetch(`${API_URL}/users`, {
       method: "POST",

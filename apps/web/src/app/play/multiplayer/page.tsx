@@ -1,80 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SpaceBackground from "@/components/SpaceBackground";
 import { authService } from "@/utils/authService";
-import { io, Socket } from "socket.io-client";
+import { useWebRTCEngine, GameSnapshot } from "@/hooks/useGameEngine";
 
-// ── Types ──
-
-interface PlayerSnapshot {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  lives: number;
-  score: number;
-  invincible: number;
-  frame: number;
-}
-
-interface EnemySnapshot {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  frame: number;
-  group: "left" | "right";
-}
-
-interface BulletSnapshot {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  vx: number;
-  vy: number;
-  isPlayerBullet: boolean;
-  ownerId: string;
-}
-
-interface GameSnapshot {
-  players: PlayerSnapshot[];
-  enemies: EnemySnapshot[];
-  bullets: BulletSnapshot[];
-  wave: number;
-  status: "waiting" | "playing" | "gameover";
-}
-
-interface Particle {       
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  color: string;
-  alpha: number;
-  size: number;
-}
-
-// ── Constants ──
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
-const GAME_SERVER_URL = "http://192.168.1.206:4000";
 
-// Helper helper client-side explosion spawner
-function createExplosion(x: number, y: number, color: string): Particle[] {
-  const particles: Particle[] = [];
+function createExplosion(x: number, y: number, color: string) {
+  const particles: Array<{
+    x: number; y: number; vx: number; vy: number;
+    color: string; alpha: number; size: number;
+  }> = [];
   for (let i = 0; i < 12; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 4;
     particles.push({
-      x,
-      y,
+      x, y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       color,
@@ -88,28 +33,47 @@ function createExplosion(x: number, y: number, color: string): Particle[] {
 export default function MultiplayerPage() {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const socketRef = useRef<Socket | null>(null);
-  const playerIdRef = useRef<string>("");
-  const roomIdRef = useRef<string>("");
   const snapshotRef = useRef<GameSnapshot | null>(null);
   const prevSnapshotRef = useRef<GameSnapshot | null>(null);
-  const particlesRef = useRef<Particle[]>([]);
+  const particlesRef = useRef<Array<{
+    x: number; y: number; vx: number; vy: number;
+    color: string; alpha: number; size: number;
+  }>>([]);
   const keysRef = useRef<Record<string, boolean>>({});
-  const inputLoopRef = useRef<number | null>(null);
 
-  const [status, setStatus] = useState<"connecting" | "waiting" | "playing" | "gameover" | "error">("connecting");
-  const [showMenu, setShowMenu] = useState(false);
-  const [wave, setWave] = useState(1);
-  const [myScore, setMyScore] = useState(0);
-  const [myLives, setMyLives] = useState(3);
-  const [playerCount, setPlayerCount] = useState(0);
   const [imagesLoaded, setImagesLoaded] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const playerImgRef = useRef<HTMLImageElement | null>(null);
   const enemyImgRef = useRef<HTMLImageElement | null>(null);
 
-  const [isMobile, setIsMobile] = useState(false);
+  // Auth
+  const [playerId, setPlayerId] = useState("");
+  const [playerName, setPlayerName] = useState("PILOTO");
 
+  useEffect(() => {
+    const user = authService.getCurrentUser();
+    if (!user) {
+      router.push("/auth");
+      return;
+    }
+    const id = user.id?.toString() || Math.random().toString(36).substring(2, 12);
+    setPlayerId(id);
+    setPlayerName(authService.getDisplayName() || user.name || "PILOTO");
+  }, [router]);
+
+  // Game engine
+  const {
+    snapshot, connected, status, error, roomId, playerIndex, sendInput,
+    matchmakingStatus, isMatched, leaveMatchmaking,
+  } = useWebRTCEngine({
+    playerId,
+    playerName,
+    mode: "multi",
+  });
+
+  // Mobile detection
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(
@@ -123,160 +87,30 @@ export default function MultiplayerPage() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  const handleMoveLeftStart = () => {
-    keysRef.current["ArrowLeft"] = true;
-  };
-  const handleMoveLeftEnd = () => {
-    keysRef.current["ArrowLeft"] = false;
-  };
-  const handleMoveRightStart = () => {
-    keysRef.current["ArrowRight"] = true;
-  };
-  const handleMoveRightEnd = () => {
-    keysRef.current["ArrowRight"] = false;
-  };
-  const handleShootStart = () => {
-    keysRef.current[" "] = true;
-  };
-  const handleShootEnd = () => {
-    keysRef.current[" "] = false;
-  };
-
-  // ── Load sprites ──
+  // Load images
   useEffect(() => {
     const playerImg = new Image();
-    playerImg.src = "/player_spritesheet.png";
     const enemyImg = new Image();
+    playerImg.src = "/player_spritesheet.png";
     enemyImg.src = "/enemy_spritesheet.png";
+    playerImgRef.current = playerImg;
+    enemyImgRef.current = enemyImg;
 
     let loaded = 0;
     const onLoad = () => {
       loaded++;
-      if (loaded === 2) {
-        playerImgRef.current = playerImg;
-        enemyImgRef.current = enemyImg;
-        setImagesLoaded(true);
-      }
+      if (loaded >= 2) setImagesLoaded(true);
     };
     playerImg.onload = onLoad;
     enemyImg.onload = onLoad;
   }, []);
 
-  // ── Auth check ──
-  useEffect(() => {
-    const user = authService.getCurrentUser();
-    if (!user) {
-      router.push("/auth");
-      return;
-    }
-    playerIdRef.current = user.id?.toString() || Math.random().toString(36).substring(2, 12);
-  }, [router]);
-
-  // ── Socket connection ──
-  useEffect(() => {
-    const user = authService.getCurrentUser();
-    if (!user) return;
-
-    const socket = io(GAME_SERVER_URL, {
-      transports: ["websocket"],
-    });
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      console.log("Connected to game server");
-      socket.emit("game:join", {
-        playerId: playerIdRef.current,
-        name: user.name || "PILOTO",
-      });
-    });
-
-    socket.on("game:joined", (data: { roomId: string }) => {
-      roomIdRef.current = data.roomId;
-      setStatus("waiting");
-    });
-
-    socket.on("game:snapshot", (snapshot: GameSnapshot) => {
-      // ── Process client-side visual particles based on snapshot diffing ──
-      if (snapshotRef.current) {
-        prevSnapshotRef.current = snapshotRef.current;
-
-        // 1. Aliens destroyed check
-        const prevEnemies = prevSnapshotRef.current.enemies || [];
-        const currEnemies = snapshot.enemies || [];
-        for (const prevEnemy of prevEnemies) {
-          const stillExists = currEnemies.some(
-            (currEnemy) => currEnemy.id === prevEnemy.id
-          );
-          if (!stillExists) {
-            particlesRef.current.push(
-              ...createExplosion(
-                prevEnemy.x + prevEnemy.width / 2,
-                prevEnemy.y + prevEnemy.height / 2,
-                "#65c5de"
-              )
-            );
-          }
-        }
-
-        // 2. Players hit/damaged check
-        const prevPlayers = prevSnapshotRef.current.players || [];
-        for (const currPlayer of snapshot.players) {
-          const prevPlayer = prevPlayers.find((p) => p.id === currPlayer.id);
-          if (prevPlayer && currPlayer.lives < prevPlayer.lives) {
-            particlesRef.current.push(
-              ...createExplosion(
-                currPlayer.x + currPlayer.width / 2,
-                currPlayer.y + currPlayer.height / 2,
-                "#ff4d4d"
-              )
-            );
-          }
-        }
-      }
-
-      snapshotRef.current = snapshot;
-
-      // Update React state for HUD
-      setWave(snapshot.wave);
-      setPlayerCount(snapshot.players.length);
-
-      if (snapshot.status === "playing") {
-        setStatus("playing");
-      } else if (snapshot.status === "gameover") {
-        setStatus("gameover");
-      }
-
-      // Find my player in snapshot
-      const me = snapshot.players.find((p) => p.id === playerIdRef.current);
-      if (me) {
-        setMyScore(me.score);
-        setMyLives(me.lives);
-      }
-    });
-
-    socket.on("game:error", (err: { message: string }) => {
-      console.error("Game error:", err.message);
-      setStatus("error");
-    });
-
-    socket.on("disconnect", () => {
-      console.log("Disconnected from game server");
-    });
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, []);
-
-  // ── Keyboard input ──
+  // Keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "p" || e.key === "P") {
         e.preventDefault();
-        if (status === "playing") {
-          setShowMenu((prev) => !prev);
-        }
+        setShowMenu((prev) => !prev);
       }
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "a", "A", "d", "D"].includes(e.key)) {
         e.preventDefault();
@@ -292,43 +126,66 @@ export default function MultiplayerPage() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [status]);
+  }, []);
 
-  // ── Input send loop (60Hz) ──
+  // Input send loop (60Hz)
   useEffect(() => {
     const sendInputs = () => {
-      const socket = socketRef.current;
-      if (!socket || status !== "playing") {
-        inputLoopRef.current = requestAnimationFrame(sendInputs);
+      if (!connected || status !== "connected" || !isMatched) {
+        requestAnimationFrame(sendInputs);
         return;
       }
 
       const keys = keysRef.current;
-      const roomId = roomIdRef.current;
-      const playerId = playerIdRef.current;
-
       if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
-        socket.emit("game:input", { roomId, playerId, input: { type: "move", direction: -1 } });
-      }
-      if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
-        socket.emit("game:input", { roomId, playerId, input: { type: "move", direction: 1 } });
+        sendInput("move", -1);
+      } else if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
+        sendInput("move", 1);
+      } else {
+        sendInput("move", 0);
       }
       if (keys[" "]) {
-        socket.emit("game:input", { roomId, playerId, input: { type: "shoot" } });
+        sendInput("shoot");
       }
 
-      inputLoopRef.current = requestAnimationFrame(sendInputs);
+      requestAnimationFrame(sendInputs);
     };
 
-    inputLoopRef.current = requestAnimationFrame(sendInputs);
-    return () => {
-      if (inputLoopRef.current) cancelAnimationFrame(inputLoopRef.current);
-    };
-  }, [status]);
+    const id = requestAnimationFrame(sendInputs);
+    return () => cancelAnimationFrame(id);
+  }, [connected, status, sendInput, isMatched]);
 
-  // ── Canvas rendering loop ──
+  // Store latest snapshot in ref for render loop
   useEffect(() => {
-    if (!imagesLoaded) return;
+    if (snapshot) {
+      if (snapshotRef.current) {
+        prevSnapshotRef.current = snapshotRef.current;
+
+        const prevEnemies = prevSnapshotRef.current.enemies || [];
+        for (const prevEnemy of prevEnemies) {
+          if (!snapshot.enemies.find((e) => e.id === prevEnemy.id)) {
+            particlesRef.current.push(
+              ...createExplosion(prevEnemy.x + prevEnemy.width / 2, prevEnemy.y + prevEnemy.height / 2, "#65c5de")
+            );
+          }
+        }
+
+        const prevPlayers = prevSnapshotRef.current.players || [];
+        for (const prevPlayer of prevPlayers) {
+          const currPlayer = snapshot.players.find((p) => p.id === prevPlayer.id);
+          if (currPlayer && currPlayer.lives < prevPlayer.lives) {
+            particlesRef.current.push(
+              ...createExplosion(currPlayer.x + currPlayer.width / 2, currPlayer.y + currPlayer.height / 2, "#ff4d4d")
+            );
+          }
+        }
+      }
+      snapshotRef.current = snapshot;
+    }
+  }, [snapshot]);
+
+  // Canvas render loop
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -340,14 +197,12 @@ export default function MultiplayerPage() {
     let animFrameId: number;
 
     const render = () => {
-      const snapshot = snapshotRef.current;
+      const snap = snapshotRef.current;
 
-      // Clear
       ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
       ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-      if (!snapshot) {
-        // Show connecting text
+      if (!snap) {
         ctx.fillStyle = "#65c5de";
         ctx.font = "16px monospace";
         ctx.textAlign = "center";
@@ -360,23 +215,10 @@ export default function MultiplayerPage() {
       const enemyImg = enemyImgRef.current;
 
       // Draw enemies
-      for (const enemy of snapshot.enemies) {
+      for (const enemy of snap.enemies) {
         if (enemyImg) {
           const sx = (enemy.frame ?? 0) * 100;
-          const sy = 0;
-          const sWidth = 100;
-          const sHeight = 100;
-          ctx.drawImage(
-            enemyImg,
-            sx,
-            sy,
-            sWidth,
-            sHeight,
-            enemy.x,
-            enemy.y,
-            enemy.width,
-            enemy.height
-          );
+          ctx.drawImage(enemyImg, sx, 0, 100, 100, enemy.x, enemy.y, enemy.width, enemy.height);
         } else {
           ctx.fillStyle = "#65c5de";
           ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
@@ -384,114 +226,151 @@ export default function MultiplayerPage() {
       }
 
       // Draw players
-      for (const player of snapshot.players) {
-        const isMe = player.id === playerIdRef.current;
-        const isInvincible = player.invincible > 0;
-
-        // Skip rendering dead players
+      for (let pi = 0; pi < snap.players.length; pi++) {
+        const player = snap.players[pi];
         if (player.lives <= 0) continue;
-
-        // Blinking effect for invincibility
-        if (isInvincible && Math.floor(Date.now() / 100) % 2 === 0) continue;
+        if (player.invincible > 0 && Math.floor(Date.now() / 100) % 2 === 0) continue;
 
         if (playerImg) {
           const sx = (player.frame ?? 0) * 400;
-          const sy = 0;
-          const sWidth = 400;
-          const sHeight = 400;
-          ctx.drawImage(
-            playerImg,
-            sx,
-            sy,
-            sWidth,
-            sHeight,
-            player.x,
-            player.y,
-            player.width,
-            player.height
-          );
+          ctx.drawImage(playerImg, sx, 0, 400, 400, player.x, player.y, player.width, player.height);
         } else {
-          ctx.fillStyle = isMe ? "#00ff88" : "#ffaa00";
+          ctx.fillStyle = "#65c5de";
           ctx.fillRect(player.x, player.y, player.width, player.height);
         }
 
         // Player name tag
-        ctx.fillStyle = isMe ? "#00ff88" : "#ffcc00";
+        ctx.fillStyle = "#65c5de";
         ctx.font = "10px monospace";
         ctx.textAlign = "center";
         ctx.fillText(player.name, player.x + player.width / 2, player.y - 8);
       }
 
       // Draw bullets
-      for (const bullet of snapshot.bullets) {
-        let color = "#ffcc00";
-        if (!bullet.isPlayerBullet) {
-          color = "#ff4d4d";
-        } else {
-          color = bullet.ownerId === playerIdRef.current ? "#00ff88" : "#ffcc00";
-        }
-
-        const bw = bullet.width || 4;
-        const bh = bullet.height || 16;
-        const vx = bullet.vx ?? 0;
-        const vy = bullet.vy ?? -10;
+      for (const bullet of snap.bullets) {
+        const color = !bullet.isPlayerBullet
+          ? "#ff4d4d"
+          : "#65c5de";
 
         ctx.save();
         ctx.translate(bullet.x, bullet.y);
-        ctx.rotate(Math.atan2(vy, vx) + Math.PI / 2);
-
         ctx.fillStyle = color;
-        ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
-
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 8;
-        ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+        ctx.fillRect(0, 0, bullet.width, bullet.height);
         ctx.restore();
       }
 
-      // Draw & Update Particles
-      const particles = particlesRef.current;
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
+      // Draw particles
+      particlesRef.current = particlesRef.current.filter((p) => {
         p.x += p.vx;
         p.y += p.vy;
-        p.alpha -= 0.02; // decay rate
-        if (p.alpha <= 0) {
-          particles.splice(i, 1);
-          continue;
-        }
+        p.alpha -= 0.02;
+        if (p.alpha <= 0) return false;
 
-        ctx.save();
         ctx.globalAlpha = p.alpha;
         ctx.fillStyle = p.color;
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 5;
-        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
-        ctx.restore();
-      }
-
-      // Game Over text on canvas
-      if (snapshot.status === "gameover") {
-        ctx.fillStyle = "rgba(0,0,0,0.7)";
-        ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-        ctx.fillStyle = "#ff4d4d";
-        ctx.font = "32px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("GAME OVER", GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20);
-        ctx.fillStyle = "#65c5de";
-        ctx.font = "14px monospace";
-        ctx.fillText(`WAVE ${snapshot.wave}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20);
-      }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        return true;
+      });
 
       animFrameId = requestAnimationFrame(render);
     };
 
     animFrameId = requestAnimationFrame(render);
-  }, [imagesLoaded]);
+    return () => cancelAnimationFrame(animFrameId);
+  }, [imagesLoaded, playerId]);
+
+  // HUD data
+  const myScore = snapshot?.players[playerIndex]?.score ?? 0;
+  const myLives = snapshot?.players[playerIndex]?.lives ?? 3;
+  const wave = snapshot?.wave ?? 1;
+  const playerCount = snapshot?.players.length ?? 0;
+  const isGameOver = snapshot?.status === "gameover";
+
+  // Submit score on game over
+  useEffect(() => {
+    if (isGameOver && myScore > 0) {
+      authService.submitScore(myScore, wave).catch(() => {});
+    }
+  }, [isGameOver]);
+
+  // Mobile touch handlers
+  const handleMoveLeftStart = () => { keysRef.current["ArrowLeft"] = true; };
+  const handleMoveLeftEnd = () => { keysRef.current["ArrowLeft"] = false; };
+  const handleMoveRightStart = () => { keysRef.current["ArrowRight"] = true; };
+  const handleMoveRightEnd = () => { keysRef.current["ArrowRight"] = false; };
+  const handleShootStart = () => { keysRef.current[" "] = true; };
+  const handleShootEnd = () => { keysRef.current[" "] = false; };
 
   return (
     <div className="relative min-h-screen w-screen overflow-hidden flex flex-col items-center justify-center bg-black">
       <SpaceBackground />
+
+      {/* ── Matchmaking Overlay ── */}
+      {!isMatched && (
+        <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center select-none">
+          <div className="flex flex-col items-center">
+            {/* Animated ship icon */}
+            <div className="mb-8 relative">
+              <div className="w-20 h-20 border-4 border-[#65c5de] rounded-full flex items-center justify-center animate-pulse shadow-[0_0_30px_rgba(101,197,222,0.4)] overflow-hidden">
+                <div className="w-12 h-12 animate-bounce" style={{
+                  backgroundImage: 'url(/player_spritesheet.png)',
+                  backgroundSize: '200% 100%',
+                  backgroundPosition: 'left center',
+                  backgroundRepeat: 'no-repeat',
+                  imageRendering: 'pixelated',
+                }} />
+              </div>
+              <div className="absolute inset-0 border-2 border-transparent border-t-[#65c5de] rounded-full animate-spin" style={{ animationDuration: '2s' }} />
+            </div>
+
+            <h1 className="text-[#65c5de] text-lg sm:text-xl font-pixel tracking-widest mb-2 uppercase">
+              PROCURANDO ADVERSÁRIO
+            </h1>
+
+            <div className="flex items-baseline gap-2 mb-6">
+              <span className="text-white text-5xl font-pixel font-bold">
+                {matchmakingStatus?.count ?? 0}
+              </span>
+              <span className="text-[#65c5de] text-2xl font-pixel">/</span>
+              <span className="text-[#65c5de] text-2xl font-pixel">
+                {matchmakingStatus?.total ?? 2}
+              </span>
+            </div>
+
+            <p className="text-zinc-500 text-[10px] font-pixel tracking-wider uppercase mb-8">
+              PILOTOS ENCONTRADOS
+            </p>
+
+            <div className="flex gap-2 mb-8">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="w-2 h-2 bg-[#65c5de] rounded-full animate-pulse"
+                  style={{ animationDelay: `${i * 0.3}s` }}
+                />
+              ))}
+            </div>
+
+            {error && (
+              <div className="text-[#ff4d4d] text-[10px] font-pixel mb-4 uppercase">
+                {error}
+              </div>
+            )}
+
+            <Link href="/play">
+              <button
+                onClick={leaveMatchmaking}
+                className="bg-transparent border-2 border-[#65c5de] text-[#65c5de] font-pixel text-xs tracking-wider py-3 px-8 hover:bg-[#65c5de]/10 transition-all duration-200 rounded-sm cursor-pointer uppercase"
+              >
+                CANCELAR
+              </button>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Top HUD */}
       <div className="relative z-10 w-full max-w-[800px] px-4 flex justify-between items-center mb-2 font-pixel select-none text-[10px] sm:text-xs">
@@ -501,7 +380,7 @@ export default function MultiplayerPage() {
         <div className="text-zinc-400 text-center">
           WAVE: <span className="text-white">{wave}</span>
           {" | "}
-          <span className="text-[#ffcc00]">JOGADORES: {playerCount}</span>
+          <span className="text-[#65c5de]">JOGADORES: {playerCount}</span>
         </div>
         <div className="text-zinc-400 flex items-center gap-1">
           LIVES:{" "}
@@ -512,7 +391,7 @@ export default function MultiplayerPage() {
               </span>
             ))}
           </span>
-          {isMobile && status === "playing" && (
+          {isMobile && !isGameOver && (
             <button
               onClick={() => setShowMenu((prev) => !prev)}
               className="ml-2 bg-[#65c5de] hover:bg-[#4bb7d3] border-b-2 border-r-2 border-[#2d8fb4] text-white p-1.5 rounded-sm active:translate-y-[1px] active:translate-x-[1px] active:border-b active:border-r transition-all select-none touch-none flex items-center justify-center"
@@ -543,46 +422,29 @@ export default function MultiplayerPage() {
         )}
 
         {/* Connecting overlay */}
-        {status === "connecting" && imagesLoaded && (
+        {imagesLoaded && status === "connecting" && (
           <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center font-pixel text-xs text-[#65c5de] select-none animate-pulse">
             CONECTANDO AO SERVIDOR DE JOGO...
           </div>
         )}
 
-        {/* Waiting for players overlay */}
-        {status === "waiting" && (
-          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center font-pixel text-xs select-none z-20">
-            <div className="text-[#65c5de] text-base mb-3 animate-pulse tracking-widest">
-              AGUARDANDO JOGADORES...
-            </div>
-            <div className="text-zinc-400 text-[10px]">
-              {playerCount}/2 PILOTOS NA SALA
-            </div>
-          </div>
-        )}
-
-        {/* Exit Menu Overlay (Multiplayer) */}
-        {showMenu && status === "playing" && (
+        {/* Exit Menu */}
+        {showMenu && !isGameOver && (
           <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center p-6 z-20 animate-fade-in select-none">
             <div className="bg-[#0b0c10]/95 border-4 border-[#65c5de] rounded-md p-8 max-w-sm w-full text-center shadow-[0_0_25px_rgba(101,197,222,0.4)]">
               <h2 className="text-[#65c5de] text-xl mb-4 tracking-widest font-pixel uppercase animate-pulse">
                 MENU DE PARTIDA
               </h2>
-              
               <p className="text-zinc-400 text-[10px] font-pixel mb-6 uppercase">
                 O jogo continua rodando em segundo plano!
               </p>
-
               <div className="flex flex-col gap-4">
-                {/* RESUME BUTTON */}
                 <button
                   onClick={() => setShowMenu(false)}
                   className="w-full text-white bg-[#65c5de] border-b-4 border-r-4 border-[#2d8fb4] hover:bg-[#4bb7d3] active:border-b-2 active:border-r-2 active:translate-y-[2px] active:translate-x-[1px] py-3 px-4 text-xs tracking-wider transition-all duration-100 font-pixel uppercase cursor-pointer rounded-sm shadow-md"
                 >
                   RETOMAR PARTIDA
                 </button>
-
-                {/* VOLTAR MENU BUTTON */}
                 <Link href="/play" className="w-full">
                   <span className="block w-full text-white bg-[#ff4d4d] border-b-4 border-r-4 border-[#cc3333] hover:bg-[#ff6666] active:border-b-2 active:border-r-2 active:translate-y-[2px] active:translate-x-[1px] py-3 px-4 text-xs tracking-wider transition-all duration-100 font-pixel uppercase cursor-pointer rounded-sm shadow-md text-center">
                     SAIR PARA O LOBBY
@@ -594,7 +456,7 @@ export default function MultiplayerPage() {
         )}
 
         {/* Game Over overlay */}
-        {status === "gameover" && (
+        {isGameOver && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 z-20 animate-fade-in select-none">
             <div className="bg-[#0b0c10]/90 border-4 border-[#ff4d4d] rounded-md p-8 max-w-sm w-full text-center shadow-[0_0_25px_rgba(255,77,77,0.5)]">
               <h2 className="text-[#ff4d4d] text-xl mb-4 tracking-widest font-pixel uppercase animate-pulse">
@@ -605,12 +467,11 @@ export default function MultiplayerPage() {
                 <div className="text-white text-base mt-1 text-[#65c5de]">{myScore}</div>
               </div>
 
-              {/* Scoreboard */}
               {snapshotRef.current && (
                 <div className="mb-6">
-                  {snapshotRef.current.players.map((p) => (
+                  {snapshotRef.current.players.map((p, idx) => (
                     <div key={p.id} className="flex justify-between font-pixel text-[9px] text-zinc-300 mb-1">
-                      <span className={p.id === playerIdRef.current ? "text-[#00ff88]" : "text-[#ffcc00]"}>
+                      <span className="text-[#65c5de]">
                         {p.name}
                       </span>
                       <span className="text-[#65c5de]">{p.score} PTS</span>
@@ -621,7 +482,7 @@ export default function MultiplayerPage() {
 
               <div className="flex flex-col gap-4">
                 <Link href="/play" className="w-full">
-                  <span className="block w-full text-white bg-[#65c5de] border-b-4 border-r-4 border-[#2d8fb4] hover:bg-[#4bb7d3] active:border-b-2 active:border-r-2 active:translate-y-[2px] active:translate-x-[1px] py-3 px-4 text-xs tracking-wider transition-all duration-100 font-pixel uppercase cursor-pointer rounded-sm shadow-md">
+                  <span className="block w-full text-white bg-[#65c5de] border-b-4 border-r-4 border-[#2d8fb4] hover:bg-[#4bb7d3] active:border-b-2 active:border-r-2 active:translate-y-[2px] active:translate-x-[1px] py-3 px-4 text-xs tracking-wider transition-all duration-100 font-pixel uppercase cursor-pointer rounded-sm shadow-md text-center">
                     VOLTAR AO LOBBY
                   </span>
                 </Link>
@@ -631,14 +492,14 @@ export default function MultiplayerPage() {
         )}
 
         {/* Error overlay */}
-        {status === "error" && (
+        {error && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 z-20 select-none">
             <div className="bg-[#0b0c10]/90 border-4 border-[#ff4d4d] rounded-md p-8 max-w-sm w-full text-center">
               <h2 className="text-[#ff4d4d] text-lg mb-4 font-pixel uppercase">
                 ERRO DE CONEXÃO
               </h2>
               <p className="text-zinc-400 text-[10px] font-pixel mb-6 uppercase">
-                NÃO FOI POSSÍVEL CONECTAR AO SERVIDOR DE JOGO.
+                {error}
               </p>
               <Link href="/play" className="w-full">
                 <span className="block w-full text-white bg-[#ff4d4d] border-b-4 border-r-4 border-[#cc3333] hover:bg-[#ff6666] py-3 px-4 text-xs tracking-wider transition-all duration-100 font-pixel uppercase cursor-pointer rounded-sm shadow-md">
@@ -658,7 +519,6 @@ export default function MultiplayerPage() {
       {/* Mobile touch controls */}
       {isMobile && (
         <div className="relative z-20 w-full max-w-[800px] flex justify-between items-center px-6 mt-4 select-none">
-          {/* Direcionais */}
           <div className="flex gap-4">
             <button
               onTouchStart={handleMoveLeftStart}
@@ -681,8 +541,6 @@ export default function MultiplayerPage() {
               ▶
             </button>
           </div>
-
-          {/* Botão de Tiro */}
           <div>
             <button
               onTouchStart={handleShootStart}
