@@ -8,9 +8,11 @@ export enum InputType {
 
 const STATUS_INV: Array<'waiting' | 'playing' | 'gameover'> = ['waiting', 'playing', 'gameover'];
 
-const REC_P = 12;
+const REC_P = 16;
 const REC_E = 11;
 const REC_B = 12;
+
+const DIR_MAP_INV = ['UP', 'RIGHT', 'DOWN', 'LEFT'] as const;
 
 interface PlayerSnapshot {
   id: string;
@@ -23,6 +25,7 @@ interface PlayerSnapshot {
   score: number;
   invincible: number;
   frame: number;
+  direction?: 'UP' | 'RIGHT' | 'DOWN' | 'LEFT';
 }
 
 interface EnemySnapshot {
@@ -32,7 +35,7 @@ interface EnemySnapshot {
   width: number;
   height: number;
   frame: number;
-  group: 'left' | 'right';
+  group: string;
 }
 
 interface BulletSnapshot {
@@ -82,8 +85,9 @@ export function decodeSnapshot(buf: ArrayBuffer, myId: string, names: Map<number
     const x = v.getFloat32(o, true); o += 4;
     const y = v.getFloat32(o, true); o += 4;
     const lives = v.getUint8(o); o++;
-    const score = v.getUint8(o); o++;
+    const score = v.getUint32(o, true); o += 4;
     const frame = v.getUint8(o); o++;
+    const dirIdx = v.getUint8(o); o++;
 
     players.push({
       id: String(idx),
@@ -92,6 +96,7 @@ export function decodeSnapshot(buf: ArrayBuffer, myId: string, names: Map<number
       width: 64, height: 64,
       lives, score, frame,
       invincible: 0,
+      direction: DIR_MAP_INV[dirIdx] ?? 'UP',
     });
   }
 

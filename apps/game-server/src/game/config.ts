@@ -33,6 +33,21 @@ export const GAME_CONFIG = {
   ENEMY_BULLET_SPEED_BASE: 4.5,
   ENEMY_BULLET_SPEED_WAVE_GROWTH: 0.15,
 
+  // Flanking Vertical
+  FLANKING_V_HORIZONTAL_SPEED: 2.0,  // velocidade horizontal na aproximação
+  FLANKING_V_VERTICAL_SPEED: 1.8,    // velocidade vertical na subida
+  FLANKING_V_MEET_MARGIN: 30,        // margem para considerar que os grupos se encontraram (px)
+  FLANKING_V_RISE_DISTANCE: 250,     // distância que sobem antes de separar (px)
+  FLANKING_V_SPAWN_OFFSET: 80,       // offset fora da tela para spawn
+
+  // V Formation
+  V_FORMATION_DESCENT_SPEED: 0.45,    // velocidade de descida gradual da formação
+  V_FORMATION_DIVE_SPEED: 4.5,       // velocidade de mergulho dos inimigos das pontas
+  V_FORMATION_ANGLE: 35,             // ângulo da formação V em graus
+  V_FORMATION_SPACING: 55,           // espaçamento entre inimigos na formação
+  V_FORMATION_DIVE_TRIGGER_Y: 200,   // Y onde as pontas começam a mergulhar
+  V_FORMATION_CLOSE_SPEED: 2.5,      // velocidade lateral do fechamento do centro
+
   // Waves
   WAVE_INITIAL_ENEMIES: 6,
   WAVE_ENEMIES_GROWTH_PER_LEVEL: 2,

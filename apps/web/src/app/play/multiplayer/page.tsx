@@ -112,7 +112,11 @@ export default function MultiplayerPage() {
         e.preventDefault();
         setShowMenu((prev) => !prev);
       }
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "a", "A", "d", "D"].includes(e.key)) {
+      if (e.key === "q" || e.key === "Q") {
+        e.preventDefault();
+        sendInput("rotate");
+      }
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "a", "A", "d", "D", "w", "W", "s", "S", "q", "Q"].includes(e.key)) {
         e.preventDefault();
       }
       keysRef.current[e.key] = true;
@@ -126,7 +130,7 @@ export default function MultiplayerPage() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []);
+  }, [sendInput]);
 
   // Input send loop (60Hz)
   useEffect(() => {
@@ -137,13 +141,23 @@ export default function MultiplayerPage() {
       }
 
       const keys = keysRef.current;
+      let dx = 0;
+      let dy = 0;
+
       if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
-        sendInput("move", -1);
+        dx = -1;
       } else if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
-        sendInput("move", 1);
-      } else {
-        sendInput("move", 0);
+        dx = 1;
       }
+
+      if (keys["ArrowUp"] || keys["w"] || keys["W"]) {
+        dy = -1;
+      } else if (keys["ArrowDown"] || keys["s"] || keys["S"]) {
+        dy = 1;
+      }
+
+      sendInput("move", dx, dx, dy);
+
       if (keys[" "]) {
         sendInput("shoot");
       }
@@ -231,15 +245,30 @@ export default function MultiplayerPage() {
         if (player.lives <= 0) continue;
         if (player.invincible > 0 && Math.floor(Date.now() / 100) % 2 === 0) continue;
 
+        ctx.save();
+        // Mover para o centro do player para rotacionar
+        const cx = player.x + player.width / 2;
+        const cy = player.y + player.height / 2;
+        ctx.translate(cx, cy);
+
+        // Rotacionar com base na direção
+        const dir = player.direction ?? 'UP';
+        let angle = 0;
+        if (dir === 'RIGHT') angle = Math.PI / 2;
+        else if (dir === 'DOWN') angle = Math.PI;
+        else if (dir === 'LEFT') angle = -Math.PI / 2;
+        ctx.rotate(angle);
+
         if (playerImg) {
           const sx = (player.frame ?? 0) * 400;
-          ctx.drawImage(playerImg, sx, 0, 400, 400, player.x, player.y, player.width, player.height);
+          ctx.drawImage(playerImg, sx, 0, 400, 400, -player.width / 2, -player.height / 2, player.width, player.height);
         } else {
           ctx.fillStyle = "#65c5de";
-          ctx.fillRect(player.x, player.y, player.width, player.height);
+          ctx.fillRect(-player.width / 2, -player.height / 2, player.width, player.height);
         }
+        ctx.restore();
 
-        // Player name tag
+        // Player name tag (não rotaciona com a nave, desenha acima)
         ctx.fillStyle = "#65c5de";
         ctx.font = "10px monospace";
         ctx.textAlign = "center";
@@ -255,7 +284,16 @@ export default function MultiplayerPage() {
         ctx.save();
         ctx.translate(bullet.x, bullet.y);
         ctx.fillStyle = color;
-        ctx.fillRect(0, 0, bullet.width, bullet.height);
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 8;
+        
+        // Se a bala se move em X, desenha na horizontal, senão vertical
+        const isHorizontal = Math.abs(bullet.vx) > 0;
+        if (isHorizontal) {
+          ctx.fillRect(-8, -2, 16, 4);
+        } else {
+          ctx.fillRect(-2, -8, 4, 16);
+        }
         ctx.restore();
       }
 
@@ -512,8 +550,8 @@ export default function MultiplayerPage() {
       </div>
 
       {/* Controls help */}
-      <div className="relative z-10 mt-3 font-pixel text-[8px] sm:text-[10px] text-zinc-500 uppercase select-none">
-        Mover: A/D ou Setas | Atirar: Espaço
+      <div className="relative z-10 mt-3 font-pixel text-[8px] sm:text-[10px] text-zinc-500 uppercase select-none text-center">
+        Mover: WASD ou Setas | Atirar: Espaço | Mirar/Girar: Q
       </div>
 
       {/* Mobile touch controls */}
@@ -541,7 +579,13 @@ export default function MultiplayerPage() {
               ▶
             </button>
           </div>
-          <div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => sendInput("rotate")}
+              className="bg-[#2d8fb4] hover:bg-[#4bb7d3] border-b-4 border-r-4 border-[#005f73] text-white font-pixel text-xs py-3 px-4 active:border-b-2 active:border-r-2 active:translate-y-[2px] active:translate-x-[1px] transition-all duration-100 rounded-sm shadow-md cursor-pointer uppercase touch-none"
+            >
+              GIRAR (Q)
+            </button>
             <button
               onTouchStart={handleShootStart}
               onTouchEnd={handleShootEnd}

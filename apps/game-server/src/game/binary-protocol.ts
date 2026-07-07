@@ -34,12 +34,15 @@ export function decodeInput(buf: ArrayBuffer): { type: InputType; direction: num
 //   wave:u8 status:u8 playerCount:u16 enemyCount:u16
 
 const HDR = 6;
-const REC_P = 12;
+const REC_P = 16;
 const REC_E = 11;
 const REC_B = 12;
 
 const STATUS_MAP: Record<string, number> = { waiting: 0, playing: 1, gameover: 2 };
 const STATUS_INV: Array<'waiting' | 'playing' | 'gameover'> = ['waiting', 'playing', 'gameover'];
+
+const DIR_MAP: Record<string, number> = { UP: 0, RIGHT: 1, DOWN: 2, LEFT: 3 };
+const DIR_INV = ['UP', 'RIGHT', 'DOWN', 'LEFT'] as const;
 
 // ── ID mapping ──
 
@@ -86,8 +89,9 @@ export function encodeSnapshot(snap: GameSnapshot): ArrayBuffer {
     v.setFloat32(o, p.x, true); o += 4;
     v.setFloat32(o, p.y, true); o += 4;
     v.setUint8(o, p.lives); o++;
-    v.setUint8(o, Math.min(p.score, 255)); o++;
+    v.setUint32(o, p.score, true); o += 4;
     v.setUint8(o, p.frame); o++;
+    v.setUint8(o, DIR_MAP[p.direction ?? 'UP'] ?? 0); o++;
   }
 
   // Enemies
@@ -132,8 +136,9 @@ export function decodeSnapshot(
     const x = v.getFloat32(o, true); o += 4;
     const y = v.getFloat32(o, true); o += 4;
     const lives = v.getUint8(o); o++;
-    const score = v.getUint8(o); o++;
+    const score = v.getUint32(o, true); o += 4;
     const frame = v.getUint8(o); o++;
+    const dirVal = v.getUint8(o); o++;
 
     players.push({
       id: pId(idx, myId),
@@ -144,6 +149,7 @@ export function decodeSnapshot(
       shootCooldown: 0,
       invincible: 0,
       animCounter: 0,
+      direction: DIR_INV[dirVal] ?? 'UP',
     });
   }
 
