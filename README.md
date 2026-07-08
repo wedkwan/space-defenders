@@ -164,4 +164,4 @@ npm run start:dev
 ### Auth
 - `@nestjs/jwt` + `@nestjs/passport` — Autenticação
 - `@prisma/client` + `pg` — ORM e banco
-- Estratégias OAuth: Google, GitHub, Facebook
+- Estratégias OAuth: Google, GitHub, Facebook.
