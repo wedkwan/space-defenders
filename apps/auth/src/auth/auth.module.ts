@@ -16,7 +16,7 @@ const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '1d';
     MailModule,
     VerificationTokenModule,
     UsersModule,
-    PassportModule,
+    PassportModule.register({ session: false }),
     JwtModule.register({
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: jwtExpiresIn as any },
@@ -26,4 +26,4 @@ const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '1d';
   providers: [AuthService, JwtStrategy, GoogleStrategy],
   exports: [AuthService],
 })
-export class AuthModule {}
+export class AuthModule {} 
