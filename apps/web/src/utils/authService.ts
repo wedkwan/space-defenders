@@ -5,7 +5,7 @@ export interface User {
   role: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || "http://localhost:3001"; // URL do serviço de autenticação
+const API_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL // URL do serviço de autenticação
 
 export const authService = {
   setToken(token: string): void {

@@ -7,7 +7,7 @@ import Link from "next/link";
 import SpaceBackground from "@/components/SpaceBackground";
 import { authService } from "@/utils/authService";
 
-const AUTH_API_URL = "http://localhost:3001";
+const AUTH_API_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL;
 
 export default function AuthPage() {
   const [isLoginMode, setIsLoginMode] = useState(false);
