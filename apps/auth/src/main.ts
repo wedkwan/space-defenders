@@ -13,7 +13,14 @@ async function bootstrap() {
     forbidNonWhitelisted: true, // Bloqueia a requisição se enviarem campos que não deviam
     transform: true, // Transforma os tipos dos dados automaticamente
   }));
-  app.enableCors();
+  app.enableCors(({
+    origin: [
+      'http://localhost:3000',                          // seu dev local
+      'https://space-defenders.vercel.app',             // produção na Vercel
+      /\.vercel\.app$/,                                  // libera todas as preview URLs de PR
+    ],
+    credentials: true, // se você usa cookies/sessão; se for só Bearer token no header, pode tirar
+  }););
 
   // Configuração do Swagger
   const config = new DocumentBuilder()
@@ -26,7 +33,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document); // disponível em /docs
 
-  await app.listen(3001);
+  await app.listen(process.env.PORT || 3001);
   console.log('Serviço de Autenticação rodando em: http://localhost:3001');
   console.log('Documentação Swagger em: http://localhost:3001/docs');
 }

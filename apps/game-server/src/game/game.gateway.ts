@@ -14,10 +14,16 @@ import { setPlayerIdMapping } from './binary-protocol';
 let roomCounter = 0;
 
 @WebSocketGateway({
-  cors: {
-    origin: '*',
+   cors: {
+    origin: [
+      'http://localhost:3000',
+      'https://space-defenders.vercel.app',
+      /\.vercel\.app$/,
+    ],
+    credentials: true,
   },
-})
+}) 
+
 export class GameGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
