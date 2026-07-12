@@ -36,6 +36,8 @@ interface UseGameEngineResult {
   isMatched: boolean;
   joinMatchmaking: () => void;
   leaveMatchmaking: () => void;
+  // Ref for direct access without React re-render (use in rAF loops)
+  latestSnapshotRef: React.MutableRefObject<GameSnapshot | null>;
 }
 
 export function useWebRTCEngine({
@@ -56,6 +58,7 @@ export function useWebRTCEngine({
   const socketRef = useRef<Socket | null>(null);
   const playerIndexRef = useRef(0);
   const playerNamesRef = useRef<Map<number, string>>(new Map());
+  const latestSnapshotRef = useRef<GameSnapshot | null>(null);
 
   const sendInput = useCallback((type: "move" | "shoot" | "rotate" | "pause", direction?: number, directionX?: number, directionY?: number) => {
     const socket = socketRef.current;
@@ -93,7 +96,7 @@ export function useWebRTCEngine({
 
     let cancelled = false;
 
-    const socket = io(gameServerUrl, { transports: ["websocket"] });
+    const socket = io(gameServerUrl, { transports: ["polling", "websocket"] });
     socketRef.current = socket;
 
     socket.on("connect", () => {
@@ -154,6 +157,10 @@ export function useWebRTCEngine({
       setStatus("error");
     });
 
+    let lastSnapshotTime = 0;
+    let lastStatus = "";
+    const SNAPSHOT_THROTTLE_MS = 100;
+
     socket.on("game:snapshot", (data: ArrayBuffer | GameSnapshot) => {
       if (cancelled) return;
 
@@ -164,7 +171,24 @@ export function useWebRTCEngine({
         snap = data as GameSnapshot;
       }
 
-      setSnapshot(snap);
+      // Always store in ref for render loop (runs at 60fps via rAF)
+      latestSnapshotRef.current = snap;
+
+      // Always update state immediately when status changes (gameover, paused, etc)
+      // Only throttle position-only updates to reduce React overhead
+      const statusChanged = snap.status !== lastStatus;
+      if (statusChanged) {
+        lastStatus = snap.status;
+        setSnapshot(snap);
+        lastSnapshotTime = 0; // Reset throttle so next frame also updates
+      } else {
+        const now = Date.now();
+        if (now - lastSnapshotTime >= SNAPSHOT_THROTTLE_MS) {
+          lastSnapshotTime = now;
+          setSnapshot(snap);
+        }
+      }
+
       setConnected(true);
       setStatus("connected");
     });
@@ -201,5 +225,6 @@ export function useWebRTCEngine({
     isMatched,
     joinMatchmaking,
     leaveMatchmaking,
+    latestSnapshotRef,
   };
 }

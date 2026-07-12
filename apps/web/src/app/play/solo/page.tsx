@@ -64,7 +64,7 @@ export default function PlaySolo() {
   }, [router]);
 
   // WebRTC engine
-  const { snapshot, connected, status, error, roomId, playerIndex, sendInput } = useWebRTCEngine({
+  const { snapshot, connected, status, error, roomId, playerIndex, sendInput, latestSnapshotRef } = useWebRTCEngine({
     playerId,
     playerName,
     mode: "solo",
@@ -86,12 +86,12 @@ export default function PlaySolo() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  // Load sprites
+  // Load sprites with timeout fallback
   useEffect(() => {
     const playerImg = new Image();
     playerImg.src = "/player_spritesheet.png";
     const enemyImg = new Image();
-    enemyImg.src = "/enemy_spritesheet.png";
+    enemyImg.src = "/enemies-sprite.png";
     const heartImg = new Image();
     heartImg.src = "/heal-heart-pixilart.png";
 
@@ -108,6 +108,18 @@ export default function PlaySolo() {
     playerImg.onload = onLoad;
     enemyImg.onload = onLoad;
     heartImg.onload = onLoad;
+
+    // Timeout fallback: start game even if images fail to load (fallback to colored rects)
+    const timeout = setTimeout(() => {
+      if (loaded < 3) {
+        playerImgRef.current = playerImg.complete ? playerImg : null;
+        enemyImgRef.current = enemyImg.complete ? enemyImg : null;
+        heartImgRef.current = heartImg.complete ? heartImg : null;
+        setImagesLoaded(true);
+      }
+    }, 5000);
+
+    return () => clearTimeout(timeout);
   }, []);
 
   // Keyboard input
@@ -143,7 +155,7 @@ export default function PlaySolo() {
       if (!connected || status !== "connected") return;
 
       // Don't send inputs if game is over
-      const snap = snapshotRef.current;
+      const snap = latestSnapshotRef.current;
       if (snap && snap.status === "gameover") return;
 
       const keys = keysRef.current;
@@ -211,6 +223,7 @@ export default function PlaySolo() {
       }
 
       snapshotRef.current = snapshot;
+      latestSnapshotRef.current = snapshot;
     }
   }, [snapshot]);
 
@@ -228,7 +241,7 @@ export default function PlaySolo() {
     let animFrameId: number;
 
     const render = () => {
-      const snap = snapshotRef.current;
+      const snap = latestSnapshotRef.current;
 
       ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
       ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -248,11 +261,22 @@ export default function PlaySolo() {
       const playerImg = playerImgRef.current;
       const enemyImg = enemyImgRef.current;
 
-      // Draw enemies
+      // Draw enemies (sprite sheet: 4 frames of 400x400)
+      // Odd waves go down (flip), even waves go up (normal)
+      const flipEnemies = snap.wave % 2 !== 0;
       for (const enemy of snap.enemies) {
         if (enemyImg) {
-          const sx = (enemy.frame ?? 0) * 100;
-          ctx.drawImage(enemyImg, sx, 0, 100, 100, enemy.x, enemy.y, enemy.width, enemy.height);
+          ctx.save();
+          if (flipEnemies) {
+            ctx.translate(enemy.x, enemy.y + enemy.height);
+            ctx.scale(1, -1);
+            const sx = (enemy.frame ?? 0) * 400;
+            ctx.drawImage(enemyImg, sx, 0, 400, 400, 0, 0, enemy.width, enemy.height);
+          } else {
+            const sx = (enemy.frame ?? 0) * 400;
+            ctx.drawImage(enemyImg, sx, 0, 400, 400, enemy.x, enemy.y, enemy.width, enemy.height);
+          }
+          ctx.restore();
         } else {
           ctx.fillStyle = "#65c5de";
           ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
@@ -299,16 +323,8 @@ export default function PlaySolo() {
         ctx.save();
         ctx.translate(bullet.x, bullet.y);
         ctx.fillStyle = color;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 8;
-        
-        // Se a bala se move em X, desenha na horizontal, senão vertical
-        const isHorizontal = Math.abs(bullet.vx) > 0;
-        if (isHorizontal) {
-          ctx.fillRect(-bullet.width / 2, -bullet.height / 2, bullet.width, bullet.height);
-        } else {
-          ctx.fillRect(-bullet.width / 2, -bullet.height / 2, bullet.width, bullet.height);
-        }
+
+        ctx.fillRect(-bullet.width / 2, -bullet.height / 2, bullet.width, bullet.height);
         ctx.restore();
       }
 
@@ -319,9 +335,7 @@ export default function PlaySolo() {
         // Bobbing animation
         const bob = Math.sin(Date.now() / 300) * 2;
         ctx.translate(heart.x + heart.width / 2, heart.y + heart.height / 2 + bob);
-        // Glow
-        ctx.shadowColor = "#ff4d6a";
-        ctx.shadowBlur = 12;
+
         if (heartImg) {
           ctx.drawImage(heartImg, -heart.width / 2, -heart.height / 2, heart.width, heart.height);
         } else {
@@ -331,25 +345,23 @@ export default function PlaySolo() {
         ctx.restore();
       }
 
-      // Draw particles
+      // Draw particles (write-index to avoid splice GC pressure)
       const particles = particlesRef.current;
-      for (let i = particles.length - 1; i >= 0; i--) {
+      let writeIdx = 0;
+      for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
         p.alpha -= 0.02;
-        if (p.alpha <= 0) {
-          particles.splice(i, 1);
-          continue;
-        }
+        if (p.alpha <= 0) continue;
         ctx.save();
         ctx.globalAlpha = p.alpha;
         ctx.fillStyle = p.color;
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 5;
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
         ctx.restore();
+        particles[writeIdx++] = p;
       }
+      particles.length = writeIdx;
 
       ctx.restore();
 
@@ -452,7 +464,7 @@ export default function PlaySolo() {
 
       {/* Game Canvas */}
       <div className="relative z-10 w-full max-w-[800px] aspect-[4/3] border-4 border-[#2d8fb4] bg-black/80 rounded-md overflow-hidden shadow-[0_0_30px_rgba(45,143,180,0.3)]">
-        <canvas ref={canvasRef} className="w-full h-full block" />
+        <canvas ref={canvasRef} className="w-full h-full block touch-none" />
 
         {/* Loading overlay */}
         {!imagesLoaded && (

@@ -67,7 +67,7 @@ export default function MultiplayerPage() {
   // Game engine
   const {
     snapshot, connected, status, error, roomId, playerIndex, sendInput,
-    matchmakingStatus, isMatched, leaveMatchmaking,
+    matchmakingStatus, isMatched, leaveMatchmaking, latestSnapshotRef,
   } = useWebRTCEngine({
     playerId,
     playerName,
@@ -88,13 +88,13 @@ export default function MultiplayerPage() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  // Load images
+  // Load images with timeout fallback
   useEffect(() => {
     const playerImg = new Image();
     const enemyImg = new Image();
     const heartImg = new Image();
     playerImg.src = "/player_spritesheet.png";
-    enemyImg.src = "/enemy_spritesheet.png";
+    enemyImg.src = "/enemies-sprite.png";
     heartImg.src = "/heal-heart-pixilart.png";
     playerImgRef.current = playerImg;
     enemyImgRef.current = enemyImg;
@@ -108,6 +108,13 @@ export default function MultiplayerPage() {
     playerImg.onload = onLoad;
     enemyImg.onload = onLoad;
     heartImg.onload = onLoad;
+
+    // Timeout fallback: start game even if images fail to load
+    const timeout = setTimeout(() => {
+      if (loaded < 3) setImagesLoaded(true);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
   }, []);
 
   // Keyboard input
@@ -143,7 +150,7 @@ export default function MultiplayerPage() {
       if (!connected || status !== "connected" || !isMatched) return;
 
       // Don't send inputs if game is over
-      const snap = snapshotRef.current;
+      const snap = latestSnapshotRef.current;
       if (snap && snap.status === "gameover") return;
 
       const keys = keysRef.current;
@@ -217,7 +224,7 @@ export default function MultiplayerPage() {
     let animFrameId: number;
 
     const render = () => {
-      const snap = snapshotRef.current;
+      const snap = latestSnapshotRef.current;
 
       ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
       ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -237,11 +244,22 @@ export default function MultiplayerPage() {
       const playerImg = playerImgRef.current;
       const enemyImg = enemyImgRef.current;
 
-      // Draw enemies
+      // Draw enemies (sprite sheet: 4 frames of 400x400)
+      // Odd waves go down (flip), even waves go up (normal)
+      const flipEnemies = snap.wave % 2 !== 0;
       for (const enemy of snap.enemies) {
         if (enemyImg) {
-          const sx = (enemy.frame ?? 0) * 100;
-          ctx.drawImage(enemyImg, sx, 0, 100, 100, enemy.x, enemy.y, enemy.width, enemy.height);
+          ctx.save();
+          if (flipEnemies) {
+            ctx.translate(enemy.x, enemy.y + enemy.height);
+            ctx.scale(1, -1);
+            const sx = (enemy.frame ?? 0) * 400;
+            ctx.drawImage(enemyImg, sx, 0, 400, 400, 0, 0, enemy.width, enemy.height);
+          } else {
+            const sx = (enemy.frame ?? 0) * 400;
+            ctx.drawImage(enemyImg, sx, 0, 400, 400, enemy.x, enemy.y, enemy.width, enemy.height);
+          }
+          ctx.restore();
         } else {
           ctx.fillStyle = "#65c5de";
           ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
@@ -293,16 +311,8 @@ export default function MultiplayerPage() {
         ctx.save();
         ctx.translate(bullet.x, bullet.y);
         ctx.fillStyle = color;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 8;
-        
-        // Se a bala se move em X, desenha na horizontal, senão vertical
-        const isHorizontal = Math.abs(bullet.vx) > 0;
-        if (isHorizontal) {
-          ctx.fillRect(-bullet.width / 2, -bullet.height / 2, bullet.width, bullet.height);
-        } else {
-          ctx.fillRect(-bullet.width / 2, -bullet.height / 2, bullet.width, bullet.height);
-        }
+
+        ctx.fillRect(-bullet.width / 2, -bullet.height / 2, bullet.width, bullet.height);
         ctx.restore();
       }
 
@@ -312,8 +322,7 @@ export default function MultiplayerPage() {
         ctx.save();
         const bob = Math.sin(Date.now() / 300) * 2;
         ctx.translate(heart.x + heart.width / 2, heart.y + heart.height / 2 + bob);
-        ctx.shadowColor = "#ff4d6a";
-        ctx.shadowBlur = 12;
+
         if (heartImg) {
           ctx.drawImage(heartImg, -heart.width / 2, -heart.height / 2, heart.width, heart.height);
         } else {
@@ -482,7 +491,7 @@ export default function MultiplayerPage() {
 
       {/* Game Canvas */}
       <div className="relative z-10 w-full max-w-[800px] aspect-[4/3] border-4 border-[#2d8fb4] bg-black/80 rounded-md overflow-hidden shadow-[0_0_30px_rgba(45,143,180,0.3)]">
-        <canvas ref={canvasRef} className="w-full h-full block" />
+        <canvas ref={canvasRef} className="w-full h-full block touch-none" />
 
         {/* Loading overlay */}
         {!imagesLoaded && (
@@ -537,9 +546,9 @@ export default function MultiplayerPage() {
                 <div className="text-white text-base mt-1 text-[#65c5de]">{myScore}</div>
               </div>
 
-              {snapshotRef.current && (
+              {snapshot && (
                 <div className="mb-6">
-                  {snapshotRef.current.players.map((p, idx) => (
+                  {snapshot.players.map((p, idx) => (
                     <div key={p.id} className="flex justify-between font-pixel text-[9px] text-zinc-300 mb-1">
                       <span className="text-[#65c5de]">
                         {p.name}

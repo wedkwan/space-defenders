@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Press_Start_2P } from "next/font/google";
 import "./globals.css";
 
@@ -11,6 +11,13 @@ const pressStart2P = Press_Start_2P({
 export const metadata: Metadata = {
   title: "Space Defenders",
   description: "Proteja o espaço de invasores alienígenas!",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
